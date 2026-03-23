@@ -13,13 +13,14 @@ Watches Claude Code conversations and saves the important ones to an Obsidian va
 
 ## Classification rules
 
-| Condition | Result |
-|-----------|--------|
-| Any message contains `save this` / `remember this` / `save conversation` / `сохрани это` / `запомни это` | Always save |
-| 3+ tool uses (file reads, edits, code runs) | Save |
-| 5+ message exchanges | Save |
-| Single exchange, no tools, trivial prompt (translate, what is…) | Skip |
-| Everything else | Save |
+| Priority | Condition | Result |
+|----------|-----------|--------|
+| 0 (highest) | Any message contains `не сохраняй` / `don't save this` / `block save` | **Always skip** |
+| 1 | Any message contains `save this` / `remember this` / `сохрани это` / `запомни это` | **Always save** |
+| 2 | 3+ tool uses (file reads, edits, code runs) | Save |
+| 2 | 5+ message exchanges | Save |
+| 3 | Single exchange, no tools, trivial prompt (translate, what is…) | Skip |
+| 4 | Everything else | Save |
 
 ---
 
