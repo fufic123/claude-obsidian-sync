@@ -10,6 +10,12 @@ import logging
 import signal
 import sys
 
+try:
+    from setproctitle import setproctitle
+    setproctitle("claude-vault-sync")
+except ImportError:
+    pass
+
 from config import Config
 from src.monitor import ResourceMonitor
 from src.notifier import Notifier
