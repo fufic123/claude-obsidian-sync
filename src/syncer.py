@@ -29,9 +29,7 @@ class ConversationSyncer:
         self._formatter = NoteFormatter(config)
         self._writer = VaultWriter(config, self._formatter)
         self._classifier = ConversationClassifier()
-        # State stores per-path dicts: {"hash": str, "skipped": bool}
-        # Older entries that are plain strings (just the hash) are normalised
-        # on first access so backward-compatibility is preserved.
+        # State: {"hash": str, "skipped": bool, "processed_lines": int}
         self._state: dict[str, dict] = {}
         self._load_state()
 
@@ -49,11 +47,20 @@ class ConversationSyncer:
         entry = self._state.get(str(path), {})
         stored_hash = entry.get("hash", "")
         was_skipped = entry.get("skipped", False)
+        processed_lines = entry.get("processed_lines", 0)
 
         if stored_hash == current_hash and not was_skipped:
-            # File unchanged and was previously saved — nothing to do.
             logger.debug("File unchanged, skipping: %s", path)
             return False
+
+        # Read all lines to find new ones since last cursor position.
+        all_lines = self._read_lines(path)
+        total_lines = len(all_lines)
+        new_lines = all_lines[processed_lines:]
+
+        # Check triggers only in NEW lines to avoid re-notifying.
+        new_user_texts = self._extract_user_texts(new_lines)
+        trigger = self._classifier.detect_trigger(new_user_texts)
 
         logger.info("Syncing: %s", path)
         conversation = self._parser.parse(path)
@@ -66,34 +73,36 @@ class ConversationSyncer:
 
         result = self._classifier.classify(conversation)
         logger.debug(
-            "Classification for %s: should_save=%s reason=%s",
-            path.name,
-            result.should_save,
-            result.reason,
+            "Classification for %s: should_save=%s reason=%s trigger=%s",
+            path.name, result.should_save, result.reason, trigger,
         )
 
         if not result.should_save:
             filename = self._formatter.make_filename(conversation)
             logger.info("Skipping %s: %s", filename, result.reason)
-            if result.reason == "skipped:block_save":
+            if trigger == "block_save":
                 self._notifier.alert(
                     "Claude Vault Sync",
-                    f"Conversation blocked from saving",
+                    "Conversation blocked from saving",
                     subtitle="block trigger detected",
                 )
-            self._state[str(path)] = {"hash": current_hash, "skipped": True}
+            self._state[str(path)] = {
+                "hash": current_hash, "skipped": True, "processed_lines": total_lines,
+            }
             self._save_state()
             if self._monitor is not None:
                 self._monitor.record_skipped()
             return False
 
         note_path = self._writer.write(conversation)
-        if result.reason in ("force_save",):
+        if trigger == "force_save":
             self._notifier.report(
                 "Claude Vault Sync",
                 f"Force-saved: {note_path.name}",
             )
-        self._state[str(path)] = {"hash": current_hash, "skipped": False}
+        self._state[str(path)] = {
+            "hash": current_hash, "skipped": False, "processed_lines": total_lines,
+        }
         self._save_state()
         if self._monitor is not None:
             self._monitor.record_saved()
@@ -113,12 +122,39 @@ class ConversationSyncer:
         return "subagents" in path.parts
 
     def _file_hash(self, path: Path) -> str:
-        """A cheap content fingerprint: file size + mtime."""
         try:
             stat = path.stat()
             return f"{stat.st_size}-{stat.st_mtime}"
         except OSError:
             return ""
+
+    def _read_lines(self, path: Path) -> list[str]:
+        try:
+            return path.read_text(encoding="utf-8").splitlines()
+        except OSError:
+            return []
+
+    def _extract_user_texts(self, lines: list[str]) -> list[str]:
+        """Extract text from user-type JSONL lines."""
+        texts: list[str] = []
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if record.get("type") != "user":
+                continue
+            content = record.get("message", {}).get("content", "")
+            if isinstance(content, str):
+                texts.append(content)
+            elif isinstance(content, list):
+                for block in content:
+                    if isinstance(block, dict) and block.get("type") == "text":
+                        texts.append(block.get("text", ""))
+        return texts
 
     def _load_state(self) -> None:
         if not self._config.state_file.exists():
@@ -129,15 +165,14 @@ class ConversationSyncer:
             logger.warning("Could not load state file: %s", exc)
             return
 
-        # Normalise legacy format where values were plain hash strings.
         normalised: dict[str, dict] = {}
         for key, value in raw.items():
             if isinstance(value, str):
-                normalised[key] = {"hash": value, "skipped": False}
+                normalised[key] = {"hash": value, "skipped": False, "processed_lines": 0}
             elif isinstance(value, dict):
                 normalised[key] = value
             else:
-                normalised[key] = {"hash": "", "skipped": False}
+                normalised[key] = {"hash": "", "skipped": False, "processed_lines": 0}
         self._state = normalised
 
     def _save_state(self) -> None:

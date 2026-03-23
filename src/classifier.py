@@ -65,6 +65,20 @@ class ConversationClassifier:
     # Public interface
     # ------------------------------------------------------------------
 
+    def detect_trigger(self, texts: list[str]) -> str | None:
+        """Check a list of raw text strings for trigger phrases.
+
+        Returns 'block_save', 'force_save', or None.
+        Only call this on NEW (unseen) messages to avoid re-notifying.
+        """
+        for text in texts:
+            if self._has_block_save_phrase(text):
+                return "block_save"
+        for text in texts:
+            if self._has_force_save_phrase(text):
+                return "force_save"
+        return None
+
     def classify(self, conversation: Conversation) -> ClassificationResult:
         """Return a ClassificationResult for *conversation*."""
         user_messages = [m for m in conversation.messages if m.role == "user"]
