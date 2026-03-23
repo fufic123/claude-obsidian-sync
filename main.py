@@ -53,6 +53,7 @@ def main() -> None:
     watcher = FileWatcher(config, syncer)
 
     monitor.start()
+    notifier.report("Claude Vault Sync", "Started — watching for conversations 👁")
 
     if not args.no_initial_sync:
         logger.info("Running initial sync of existing files…")
@@ -65,6 +66,7 @@ def main() -> None:
         logger.info("Received signal %s, shutting down…", signum)
         watcher.stop()
         monitor.stop()
+        notifier.report("Claude Vault Sync", "Stopped — no longer watching")
         sys.exit(0)
 
     signal.signal(signal.SIGINT, _shutdown)
@@ -81,6 +83,7 @@ def main() -> None:
     except KeyboardInterrupt:
         watcher.stop()
         monitor.stop()
+        notifier.report("Claude Vault Sync", "Stopped — no longer watching")
 
 
 if __name__ == "__main__":
