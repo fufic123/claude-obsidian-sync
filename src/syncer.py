@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 from config import Config
 from src.classifier import ConversationClassifier
 from src.formatter import NoteFormatter
+from src.notifier import Notifier
 from src.parser import ConversationParser
 from src.writer import VaultWriter
 
@@ -23,6 +24,7 @@ class ConversationSyncer:
     def __init__(self, config: Config, monitor: ResourceMonitor | None = None) -> None:
         self._config = config
         self._monitor = monitor
+        self._notifier = Notifier()
         self._parser = ConversationParser()
         self._formatter = NoteFormatter(config)
         self._writer = VaultWriter(config, self._formatter)
@@ -73,15 +75,24 @@ class ConversationSyncer:
         if not result.should_save:
             filename = self._formatter.make_filename(conversation)
             logger.info("Skipping %s: %s", filename, result.reason)
-            # Record the hash so we don't re-parse on every event, but mark
-            # it as skipped so a later force-save trigger causes re-evaluation.
+            if result.reason == "skipped:block_save":
+                self._notifier.alert(
+                    "Claude Vault Sync",
+                    f"Conversation blocked from saving",
+                    subtitle="block trigger detected",
+                )
             self._state[str(path)] = {"hash": current_hash, "skipped": True}
             self._save_state()
             if self._monitor is not None:
                 self._monitor.record_skipped()
             return False
 
-        self._writer.write(conversation)
+        note_path = self._writer.write(conversation)
+        if result.reason in ("force_save",):
+            self._notifier.report(
+                "Claude Vault Sync",
+                f"Force-saved: {note_path.name}",
+            )
         self._state[str(path)] = {"hash": current_hash, "skipped": False}
         self._save_state()
         if self._monitor is not None:
