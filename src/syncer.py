@@ -81,12 +81,6 @@ class ConversationSyncer:
         if not result.should_save:
             filename = self._formatter.make_filename(conversation)
             logger.info("Skipping %s: %s", filename, result.reason)
-            if trigger == "block_save" and not self._silent:
-                self._notifier.alert(
-                    "Claude Vault Sync",
-                    "Conversation blocked from saving",
-                    subtitle="block trigger detected",
-                )
             self._state[str(path)] = {
                 "hash": current_hash, "skipped": True, "processed_lines": total_lines,
             }

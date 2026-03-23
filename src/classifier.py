@@ -40,17 +40,6 @@ class ConversationClassifier:
         "сохрани это",
     )
 
-    # Phrases that block saving regardless of other rules (case-insensitive).
-    _BLOCK_SAVE_PHRASES: tuple[str, ...] = (
-        "don't save this",
-        "do not save this",
-        "don't save conversation",
-        "block save",
-        "не сохраняй это",
-        "не сохраняй разговор",
-        "не сохраняй",
-    )
-
     # Prefixes on the *first* user message that suggest a trivial lookup.
     _TRIVIAL_PREFIXES: tuple[str, ...] = (
         "translate",
@@ -66,14 +55,7 @@ class ConversationClassifier:
     # ------------------------------------------------------------------
 
     def detect_trigger(self, texts: list[str]) -> str | None:
-        """Check a list of raw text strings for trigger phrases.
-
-        Returns 'block_save', 'force_save', or None.
-        Only call this on NEW (unseen) messages to avoid re-notifying.
-        """
-        for text in texts:
-            if self._has_block_save_phrase(text):
-                return "block_save"
+        """Check new (unseen) messages for force-save trigger. Returns 'force_save' or None."""
         for text in texts:
             if self._has_force_save_phrase(text):
                 return "force_save"
@@ -84,11 +66,6 @@ class ConversationClassifier:
         user_messages = [m for m in conversation.messages if m.role == "user"]
         exchange_count = len(user_messages)
         tool_use_count = conversation.tool_use_count
-
-        # --- Rule 0: block-save override (highest priority) ---
-        for msg in conversation.messages:
-            if msg.role == "user" and self._has_block_save_phrase(msg.text):
-                return ClassificationResult(should_save=False, reason="skipped:block_save")
 
         # --- Rule 1: force-save override ---
         for msg in conversation.messages:
@@ -123,10 +100,6 @@ class ConversationClassifier:
     def _has_force_save_phrase(self, text: str) -> bool:
         lower = text.lower()
         return any(phrase in lower for phrase in self._FORCE_SAVE_PHRASES)
-
-    def _has_block_save_phrase(self, text: str) -> bool:
-        lower = text.lower()
-        return any(phrase in lower for phrase in self._BLOCK_SAVE_PHRASES)
 
     def _matches_trivial_prefix(self, text: str) -> bool:
         lower = text.lower().lstrip()
