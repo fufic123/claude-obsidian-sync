@@ -26,6 +26,6 @@ class Config:
     summary_message_max_chars: int = 100
     summary_message_count: int = 3
     cpu_alert_threshold: float = 5.0        # percent
-    ram_alert_threshold_mb: float = 50.0   # megabytes RSS
+    ram_alert_threshold_mb: float = 150.0  # megabytes RSS (Python baseline ~60MB)
     alert_cooldown_minutes: int = 30
     daily_report_time: str = "17:00"        # HH:MM local time (Vilnius)

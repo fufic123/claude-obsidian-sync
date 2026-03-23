@@ -32,6 +32,7 @@ class ConversationSyncer:
         # State: {"hash": str, "skipped": bool, "processed_lines": int}
         self._state: dict[str, dict] = {}
         self._load_state()
+        self._silent: bool = False  # suppresses trigger notifications during initial sync
 
     # ------------------------------------------------------------------
     # Public interface
@@ -80,7 +81,7 @@ class ConversationSyncer:
         if not result.should_save:
             filename = self._formatter.make_filename(conversation)
             logger.info("Skipping %s: %s", filename, result.reason)
-            if trigger == "block_save":
+            if trigger == "block_save" and not self._silent:
                 self._notifier.alert(
                     "Claude Vault Sync",
                     "Conversation blocked from saving",
@@ -95,7 +96,7 @@ class ConversationSyncer:
             return False
 
         note_path = self._writer.write(conversation)
-        if trigger == "force_save":
+        if trigger == "force_save" and not self._silent:
             self._notifier.report(
                 "Claude Vault Sync",
                 f"Force-saved: {note_path.name}",
@@ -109,10 +110,12 @@ class ConversationSyncer:
         return True
 
     def sync_all_existing(self) -> None:
-        """Process all existing JSONL files on startup."""
+        """Process all existing JSONL files on startup — silently (no trigger notifications)."""
+        self._silent = True
         for path in self._config.claude_projects_dir.rglob("*.jsonl"):
             if not self._is_subagent_file(path):
                 self.sync_file(path)
+        self._silent = False
 
     # ------------------------------------------------------------------
     # Internal helpers
