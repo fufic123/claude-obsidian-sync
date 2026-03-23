@@ -1,0 +1,4 @@
+processed.json
+service.log
+__pycache__/
+*.pyc
